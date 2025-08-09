@@ -13,6 +13,10 @@ save_path=$2
 # Shift the arguments so $@ refers to the rest
 shift 2
 
+# Project root (three levels up from this script)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../../.. && pwd)"
+HF_ATTENTION_BACKEND=${HF_ATTENTION_BACKEND:-sdpa} \
+PYTORCH_NO_CUDA_MEMORY_CACHING=1 \
 torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
      -m verl.trainer.fsdp_sft_trainer \
     data.train_files=$HOME/data/gsm8k/train.parquet \
@@ -20,8 +24,8 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     data.prompt_key=extra_info \
     data.response_key=reward_model \
     optim.lr=1e-4 \
-    data.prompt_dict_keys=['question'] \
-    data.response_dict_keys=['ground_truth'] \
+    data.prompt_dict_keys=[question] \
+    data.response_dict_keys=[ground_truth] \
     data.micro_batch_size_per_gpu=4 \
     model.partial_pretrain=Qwen/Qwen2.5-0.5B-Instruct \
     trainer.default_local_dir=$save_path \
@@ -32,8 +36,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     model.lora_rank=32\
     model.lora_alpha=16 \
     model.target_modules=all-linear \
-    data.system_prompt_path="/Users/sathyanarayanan/Desktop/Avyra_Technologies/PRODUCTS/New Train/verl/data/gsm8k/reasoning_instruction.txt" \
-    data.response_prefix='#### '
+    data.system_prompt_path="$PROJECT_DIR/data/gsm8k/reasoning_instruction.txt"
 
     # Or you can do this:
     # model.target_modules=[q_proj,v_proj] \

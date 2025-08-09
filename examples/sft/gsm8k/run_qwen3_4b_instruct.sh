@@ -27,7 +27,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     data.response_prefix='#### ' \
     data.max_length=2048 \
     data.micro_batch_size_per_gpu=2 \
-    model.partial_pretrain=Qwen/Qwen3-4B-Instruct-2507 \
+    model.partial_pretrain="$HOME/models/Qwen3-4B-Instruct-2507" \
     model.trust_remote_code=true \
     model.lora_rank=32 \
     model.lora_alpha=16 \
