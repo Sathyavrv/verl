@@ -45,6 +45,12 @@ class SFTDataset(Dataset):
         max_length = config.get("max_length", 1024)
         truncation = config.get("truncation", "error")
         use_shm = config.get("use_shm", False)
+        # Optional: prepend a system message with global reasoning/formatting instructions
+        system_prompt = config.get("system_prompt", None)
+        system_prompt_path = config.get("system_prompt_path", None)
+        # Optional: wrap response with prefix/suffix, e.g., "#### " + answer
+        response_prefix = config.get("response_prefix", None)
+        response_suffix = config.get("response_suffix", None)
 
         assert truncation in ["error", "left", "right"]
         self.truncation = truncation
@@ -64,6 +70,22 @@ class SFTDataset(Dataset):
         self.response_dict_keys = response_dict_keys if response_dict_keys else []
 
         self.max_length = max_length
+
+        # Load system prompt from file if provided, otherwise use inline string
+        self.system_prompt = None
+        if system_prompt is not None and isinstance(system_prompt, str) and len(system_prompt.strip()) > 0:
+            self.system_prompt = system_prompt
+        elif system_prompt_path is not None:
+            import os
+            path = os.path.expanduser(system_prompt_path)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self.system_prompt = f.read()
+            else:
+                print(f"[SFTDataset] Warning: system_prompt_path does not exist: {path}")
+        # Store response wrappers
+        self.response_prefix = response_prefix if response_prefix is not None else ""
+        self.response_suffix = response_suffix if response_suffix is not None else ""
 
         self._download()
         self._read_files_and_tokenize()
@@ -121,11 +143,16 @@ class SFTDataset(Dataset):
         response = self.responses[item]
 
         # apply chat template
-        prompt_chat = [{"role": "user", "content": prompt}]
+        prompt_chat = []
+        if self.system_prompt is not None and len(self.system_prompt.strip()) > 0:
+            prompt_chat.append({"role": "system", "content": self.system_prompt})
+        prompt_chat.append({"role": "user", "content": prompt})
 
         # string
         prompt_chat_str = tokenizer.apply_chat_template(prompt_chat, add_generation_prompt=True, tokenize=False)
-        response_chat_str = response + tokenizer.eos_token
+        # Build response text with optional wrappers (e.g., "#### ")
+        response_text = f"{self.response_prefix}{response}{self.response_suffix}"
+        response_chat_str = response_text + tokenizer.eos_token
 
         # tokenize
         prompt_ids_output = tokenizer(prompt_chat_str, return_tensors="pt", add_special_tokens=False)

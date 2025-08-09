@@ -19,6 +19,13 @@ data:
   truncation: error
   balance_dp_token: False
   chat_template: null
+  # Optional global system prompt to steer reasoning; either inline or via file path
+  # If both set, inline string takes precedence
+  system_prompt: null
+  system_prompt_path: null
+  # Optional response wrappers, e.g., to enforce GSM8K final answer format
+  response_prefix: null
+  response_suffix: null
   custom_cls:
     path: null
     name: null

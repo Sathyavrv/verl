@@ -16,10 +16,10 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     data.train_files=$HOME/data/gsm8k/train.parquet \
     data.val_files=$HOME/data/gsm8k/test.parquet \
     data.prompt_key=extra_info \
-    data.response_key=extra_info \
+    data.response_key=reward_model \
     optim.lr=1e-4 \
     data.prompt_dict_keys=['question'] \
-    +data.response_dict_keys=['answer'] \
+    data.response_dict_keys=['ground_truth'] \
     data.micro_batch_size_per_gpu=64 \
     model.partial_pretrain=Qwen/Qwen2.5-0.5B-Instruct \
     trainer.default_local_dir=$save_path \
@@ -27,6 +27,8 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     trainer.experiment_name=gsm8k-sft-qwen-2.5-0.5b-instruct \
     trainer.logger=console \
     trainer.total_epochs=2 $@ \
+    data.system_prompt_path="/Users/sathyanarayanan/Desktop/Avyra_Technologies/PRODUCTS/New Train/verl/data/gsm8k/reasoning_instruction.txt" \
+    data.response_prefix='#### ' \
     model.lora_rank=32 \
     model.lora_alpha=16 \
     model.target_modules=all-linear \

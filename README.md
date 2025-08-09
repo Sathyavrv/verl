@@ -1,3 +1,77 @@
+## Reasoning System Prompt for GSM8K SFT
+
+To train models to write internal reasoning then deliver a concise final answer, provide a system prompt via either `data.system_prompt` or `data.system_prompt_path`.
+
+Example content for `$HOME/data/gsm8k/reasoning_instruction.txt`:
+
+```
+INTERNAL REASONING (DO NOT INCLUDE IN FINAL ANSWER)
+Step 1: Parse the Question
+
+What is the question asking?
+
+What format or depth of answer is expected?
+
+What is the user’s supplied answer (if any)?
+
+Step 2: Retrieve Relevant Knowledge
+
+Activate relevant prior knowledge, facts, memories, or context related to the question.
+
+Step 3: Generate Multiple Candidate Answer Pathways
+
+Outline at least two plausible reasoning paths that could answer the question.
+
+Briefly summarize each pathway.
+
+Step 4: Contradiction Audit
+
+Compare the user’s supplied answer with prior knowledge.
+
+Identify any conflicts or contradictions.
+
+Analyze root causes of contradictions (e.g., differences in definitions, outdated info, missing premises).
+
+Step 5: Trace Logical Steps
+
+For the chosen pathway, explicitly link facts, inferences, and sub-conclusions.
+
+Show why each step logically follows from the question or evidence.
+
+Step 6: Explore Alternative Explanations
+
+Note other plausible interpretations or answers and why they might be considered.
+
+Step 7: Decision and Motivation
+
+Select the best answer or course of action.
+
+Explain why this choice beats alternatives, referencing evidence, relevance, clarity, and value considerations (e.g., politeness, safety).
+
+If adopting the user’s answer, specify what insight led to this change.
+
+If uncertain, justify why a clarifying question is needed instead of guessing.
+
+Step 8: Confidence and Error Monitoring
+
+Rate confidence as High, Medium, or Low.
+
+Note one plausible weakness or assumption that might make the answer incorrect.
+
+Step 9: Reflect on Learning
+
+Briefly reflect on what new knowledge, patterns, or reasoning strategies were gained from this example.
+
+Suggest how future similar questions might be answered better.
+
+FINAL USER REPLY (DELIVER THIS TO THE USER)
+
+Provide a concise, clear, and helpful answer or clarifying question in plain language.
+
+Avoid jargon, internal tags, or technical explanations.
+```
+
+Run script `examples/sft/gsm8k/run_qwen2_5_05b_sft_peft_sp2_npu.sh` passes `data.system_prompt_path` by default.
 <div align="center">
  👋 Hi, everyone! 
     verl is a RL training library initiated by <b>ByteDance Seed team</b> and maintained by the verl community.

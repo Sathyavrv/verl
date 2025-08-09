@@ -133,6 +133,18 @@ class FSDPSFTTrainer:
         if self.device_mesh.get_rank() == 0:
             print(self.config)
         self.device_name = self.config.trainer.device
+        if self.device_mesh.get_rank() == 0:
+            # Preview a sample to verify prompt formatting and loss mask
+            try:
+                sample = self.train_dataset[0]
+                preview_tokens = sample["input_ids"][:128].tolist()
+                preview_mask = sample["loss_mask"][:128].tolist()
+                decoded_preview = self.tokenizer.decode([t for t in preview_tokens if t != self.tokenizer.pad_token_id])
+                print("[SFT Trainer] Sample preview (first 128 tokens):")
+                print(decoded_preview)
+                print("[SFT Trainer] Loss mask (first 128):", preview_mask)
+            except Exception as e:
+                print(f"[SFT Trainer] Warning: failed to preview first sample: {e}")
 
     def _normalize_config_bsz(self):
         dp_size = self.device_mesh.size(0) if not self.ulysses_device_mesh else self.ulysses_device_mesh.size(0)
@@ -337,6 +349,12 @@ class FSDPSFTTrainer:
                 f"Number of steps/epoch {self.steps_per_epoch}, number of epochs "
                 f"{self.config.trainer.total_epochs}, total number of steps {self.total_steps}"
             )
+            # Basic dataset sanity logs
+            try:
+                print(f"[SFT Trainer] Train set size: {len(self.train_dataset)} | Val set size: {len(self.val_dataset)}")
+                print(f"[SFT Trainer] Micro batch per GPU: {self.config.data.micro_batch_size_per_gpu} | Train batch per rank: {self.config.data.train_batch_size}")
+            except Exception:
+                pass
 
         num_warmup_steps = int(self.total_steps * self.config.optim.warmup_steps_ratio)
 
@@ -465,6 +483,8 @@ class FSDPSFTTrainer:
         for micro_batch in micro_batches:
             loss = self._compute_loss_and_backward(batch=micro_batch) / n_micro_batches
             step_loss += loss.item()
+        if self.device_mesh.get_rank() == 0:
+            print(f"[SFT Trainer] Step loss (pre-reduce): {step_loss:.6f}")
 
         if self.config.model.strategy == "fsdp":
             grad_norm = self.fsdp_model.clip_grad_norm_(max_norm=self.config.optim.clip_grad)
@@ -497,6 +517,8 @@ class FSDPSFTTrainer:
         elif is_npu_available:
             torch.distributed.all_reduce(step_loss)
             step_loss /= self.device_mesh.size(0)
+        if self.device_mesh.get_rank() == 0:
+            print(f"[SFT Trainer] Step loss (avg across DP): {step_loss.detach().item():.6f}, LR: {lr:.6e}")
         return {"train/loss": step_loss.detach().item(), "train/lr(1e-3)": lr * 1e3}
 
     def validation_step(self, batch: TensorDict):
