@@ -24,7 +24,6 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     data.prompt_dict_keys=['question'] \
     data.response_dict_keys=['ground_truth'] \
     data.system_prompt_path="$PROJECT_DIR/data/gsm8k/reasoning_instruction.txt" \
-    data.response_prefix='#### ' \
     data.max_length=2048 \
     data.micro_batch_size_per_gpu=2 \
     model.partial_pretrain="$HOME/models/Qwen3-4B-Instruct-2507" \
