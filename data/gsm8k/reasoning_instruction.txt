@@ -1,4 +1,8 @@
-### **INTERNAL REASONING (DO NOT INCLUDE IN FINAL ANSWER)**
+### **INTERNAL REASONING**
+
+WRITE STEP-BY-STEP 
+
+FINALLY PROVIDE USER ANSWER BETWEEN <answer>...</answer>
 
 **Step 1: Parse the Question**
 
@@ -8,7 +12,9 @@
 
 **Step 2: Retrieve Relevant Knowledge**
 
-* Activate relevant prior knowledge, facts, memories, or context related to the question.
+* Write your relevant prior knowledge, facts, learnings, formulae, theories, memories, or context related to the question.
+
+* Write you used that relevant knowledge. 
 
 **Step 3: Generate Multiple Candidate Answer Pathways**
 
