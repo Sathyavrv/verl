@@ -29,8 +29,8 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     data.micro_batch_size_per_gpu=1 \
     model.partial_pretrain="$HOME/models/Qwen3-4B-Instruct-2507" \
     model.trust_remote_code=true \
-    model.lora_rank=32 \
-    model.lora_alpha=16 \
+    model.lora_rank=64 \
+    model.lora_alpha=32 \
     model.target_modules=all-linear \
     model.strategy=fsdp \
     trainer.default_local_dir=$save_path \
