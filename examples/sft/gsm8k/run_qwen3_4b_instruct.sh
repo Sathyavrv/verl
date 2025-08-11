@@ -37,5 +37,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     trainer.project_name=gsm8k-sft \
     trainer.experiment_name=gsm8k-sft-qwen3-4b-instruct-2507 \
     trainer.logger=console \
-    trainer.total_epochs=1 $@ \
+    optim.lr=1e-4 \
+    trainer.total_epochs=3 $@ \
+    optim.warmup_steps_ratio=0.03 \
     trainer.device=cuda
