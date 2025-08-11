@@ -1,0 +1,20 @@
+pip install --upgrade pip setuptools wheel packaging
+pip install --no-cache-dir --no-build-isolation flashinfer-python==0.2.6.post1
+pip install --no-cache-dir "sglang[all]==0.4.8" torch-memory-saver
+pip install --no-cache-dir "tensordict==0.6.2" "transformers[hf_xet]>=4.53" accelerate datasets peft hf-transfer "numpy<2.0.0" "pyarrow>=19.0.1" pandas "ray[default]" codetiming hydra-core pylatexenc qwen-vl-utils wandb dill pybind11 liger-kernel mathruler blobfile xgrammar torchdata cuda-bindings pytest py-spy pyext pre-commit ruff
+
+# Optional: FlashAttention prebuilt wheel for Torch 2.7 + CUDA 12 (Python 3.10). Safe to ignore if it fails.
+pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.0.post2/flash_attn-2.8.0.post2+cu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl || true
+
+# Optional: Apex. Requires CUDA toolchain; may fail on hosted environments.
+pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+https://github.com/NVIDIA/apex.git || true
+
+# Optional: cuDNN runtime via pip (may be unnecessary if already present in the environment)
+pip install --no-cache-dir nvidia-cudnn-cu12==9.8.0.87 || true
+
+# Optional: DeepEP (may require system deps; safe to ignore failures)
+pip install --no-cache-dir git+https://github.com/deepseek-ai/DeepEP.git@a84a248 || true
+
+pip uninstall -y pynvml nvidia-ml-py || true
+pip install --no-cache-dir --upgrade "nvidia-ml-py>=12.560.30" "fastapi[standard]>=0.115.0" "optree>=0.13.0" "pydantic>=2.9" "grpcio>=1.62.1"
+pip install --no-cache-dir mbridge
