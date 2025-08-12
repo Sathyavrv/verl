@@ -137,12 +137,46 @@ class FSDPSFTTrainer:
             # Preview a sample to verify prompt formatting and loss mask
             try:
                 sample = self.train_dataset[0]
-                preview_tokens = sample["input_ids"][:128].tolist()
-                preview_mask = sample["loss_mask"][:128].tolist()
-                decoded_preview = self.tokenizer.decode([t for t in preview_tokens if t != self.tokenizer.pad_token_id])
-                print("[SFT Trainer] Sample preview (first 128 tokens):")
-                print(decoded_preview)
-                print("[SFT Trainer] Loss mask (first 128):", preview_mask)
+                preview_num_tokens = getattr(self.config.trainer, "preview_num_tokens", 128)
+                preview_assistant_only = getattr(self.config.trainer, "preview_assistant_only", False)
+
+                full_input_ids = sample["input_ids"]
+                full_loss_mask = sample.get("loss_mask", None)
+
+                if preview_assistant_only and full_loss_mask is not None:
+                    assistant_token_ids = self._select_assistant_token_ids(
+                        input_ids=full_input_ids, loss_mask=full_loss_mask, max_tokens=preview_num_tokens
+                    )
+                    decoded_preview = self.tokenizer.decode(assistant_token_ids)
+                    token_scope = (
+                        "all" if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0) else f"first {preview_num_tokens}"
+                    )
+                    print(f"[SFT Trainer] Assistant response preview ({token_scope} tokens):")
+                    print(decoded_preview)
+                else:
+                    preview_tokens = (
+                        full_input_ids.tolist()
+                        if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0)
+                        else full_input_ids[: preview_num_tokens].tolist()
+                    )
+                    decoded_preview = self.tokenizer.decode(
+                        [t for t in preview_tokens if t != self.tokenizer.pad_token_id]
+                    )
+                    token_scope = (
+                        "all" if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0) else f"first {preview_num_tokens}"
+                    )
+                    print(f"[SFT Trainer] Sample preview ({token_scope} tokens):")
+                    print(decoded_preview)
+
+                # Optionally print a small slice of loss mask for sanity
+                if full_loss_mask is not None:
+                    preview_mask_len = (
+                        128 if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0) else min(128, preview_num_tokens)
+                    )
+                    print(
+                        "[SFT Trainer] Loss mask (first {}):".format(preview_mask_len),
+                        full_loss_mask[:preview_mask_len].tolist(),
+                    )
             except Exception as e:
                 print(f"[SFT Trainer] Warning: failed to preview first sample: {e}")
 
@@ -755,6 +789,51 @@ class FSDPSFTTrainer:
                     disable=rank != 0,
                 )
             ):
+                # Optional preview logging during training
+                try:
+                    preview_every_n_steps = getattr(self.config.trainer, "preview_every_n_steps", 0)
+                    preview_assistant_only = getattr(self.config.trainer, "preview_assistant_only", False)
+                    preview_num_tokens = getattr(self.config.trainer, "preview_num_tokens", 128)
+                    if (
+                        rank == 0
+                        and isinstance(preview_every_n_steps, int)
+                        and preview_every_n_steps > 0
+                        and (global_step + 1) % preview_every_n_steps == 0
+                    ):
+                        # Use the first sample from current batch for preview
+                        if "input_ids" in data and "loss_mask" in data:
+                            input_ids_0 = data["input_ids"][0].detach().cpu()
+                            loss_mask_0 = data["loss_mask"][0].detach().cpu()
+                            if preview_assistant_only:
+                                assistant_token_ids = self._select_assistant_token_ids(
+                                    input_ids=input_ids_0, loss_mask=loss_mask_0, max_tokens=preview_num_tokens
+                                )
+                                decoded_preview = self.tokenizer.decode(assistant_token_ids)
+                                token_scope = (
+                                    "all" if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0) else f"first {preview_num_tokens}"
+                                )
+                                print(
+                                    f"[SFT Trainer] Step {global_step + 1} assistant response preview ({token_scope} tokens):\n{decoded_preview}"
+                                )
+                            else:
+                                token_ids = (
+                                    data["input_ids"][0].tolist()
+                                    if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0)
+                                    else data["input_ids"][0][: preview_num_tokens].tolist()
+                                )
+                                decoded_preview = self.tokenizer.decode(
+                                    [t for t in token_ids if t != self.tokenizer.pad_token_id]
+                                )
+                                token_scope = (
+                                    "all" if (not isinstance(preview_num_tokens, int) or preview_num_tokens <= 0) else f"first {preview_num_tokens}"
+                                )
+                                print(
+                                    f"[SFT Trainer] Step {global_step + 1} sample preview ({token_scope} tokens):\n{decoded_preview}"
+                                )
+                except Exception as e:
+                    if rank == 0:
+                        print(f"[SFT Trainer] Warning: failed to preview current batch sample: {e}")
+
                 global_step += 1
                 data = TensorDict(data, batch_size=self.config.data.train_batch_size).to(self.device_name)
                 metric = self.training_step(data)
@@ -789,6 +868,53 @@ class FSDPSFTTrainer:
                     if rank == 0:
                         print(f"Final validation metrics: {last_valid_metric}")
                     return
+
+    def _select_assistant_token_ids(self, input_ids, loss_mask, max_tokens: int | None = None):
+        """Select token ids that belong to the assistant response based on loss_mask.
+
+        For single-turn SFTDataset, the loss mask is 1 for the last token of the prompt and
+        all response tokens except the last token. We drop the first 1 (belongs to prompt)
+        and keep the following ones as assistant tokens. For multi-turn datasets, we simply
+        take all positions where loss_mask == 1 (concatenated assistant messages).
+
+        Args:
+            input_ids: 1-D tensor of token ids
+            loss_mask: 1-D tensor of 0/1 mask
+            max_tokens: if positive, limit to first max_tokens tokens; if None or <=0, keep all
+
+        Returns:
+            List[int]: token ids of the assistant response to decode
+        """
+        try:
+            ids = input_ids.tolist()
+            lm = loss_mask.tolist()
+            one_indices = [i for i, v in enumerate(lm) if int(v) == 1]
+            if not one_indices:
+                return []
+
+            # Heuristic: if dataset is SFTDataset, skip the first 1 (belongs to prompt tail)
+            try:
+                from verl.utils.dataset import SFTDataset as _SFTDataset
+
+                is_single_turn = isinstance(self.train_dataset, _SFTDataset)
+            except Exception:
+                is_single_turn = False
+
+            if is_single_turn and len(one_indices) > 0:
+                one_indices = one_indices[1:]
+
+            if isinstance(max_tokens, int) and max_tokens > 0:
+                one_indices = one_indices[:max_tokens]
+
+            pad_id = self.tokenizer.pad_token_id
+            return [ids[i] for i in one_indices if pad_id is None or ids[i] != pad_id]
+        except Exception:
+            # Fallback: return all non-pad tokens if anything goes wrong
+            ids = input_ids.tolist()
+            pad_id = self.tokenizer.pad_token_id
+            if isinstance(max_tokens, int) and max_tokens > 0:
+                ids = ids[:max_tokens]
+            return [t for t in ids if pad_id is None or t != pad_id]
 
 
 def run_sft(config):
