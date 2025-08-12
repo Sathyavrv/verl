@@ -26,6 +26,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 import logging
 import re
 from contextlib import nullcontext
+from typing import Optional
 
 import hydra
 import torch
@@ -50,6 +51,7 @@ from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 from verl.utils.device import get_device_id, get_device_name, is_cuda_available, is_npu_available
 from verl.utils.distributed import destroy_global_process_group, initialize_global_process_group
 from verl.utils.fs import copy_to_local
+from verl.utils.model import compute_position_id_with_mask
 from verl.utils.fsdp_utils import (
     CPUOffloadPolicy,
     MixedPrecisionPolicy,
@@ -72,6 +74,14 @@ from verl.utils.ulysses import (
     ulysses_pad_and_slice_inputs,
 )
 from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
+from verl.utils.self_training import (
+    DEFAULT_ANSWER_TAG_PREFIX,
+    DEFAULT_ANSWER_TAG_SUFFIX,
+    answers_match,
+    build_mismatch_hint,
+    extract_final_answer,
+    remove_tags,
+)
 
 if is_cuda_available:
     from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
@@ -133,6 +143,31 @@ class FSDPSFTTrainer:
         if self.device_mesh.get_rank() == 0:
             print(self.config)
         self.device_name = self.config.trainer.device
+
+        # Self-training settings
+        st_cfg = getattr(self.config.trainer, "self_training", None)
+        self.self_training_enable = bool(st_cfg.enable) if st_cfg is not None and hasattr(st_cfg, "enable") else False
+        if self.self_training_enable:
+            if self.config.ulysses_sequence_parallel_size > 1:
+                raise ValueError("Self-training mode does not support sequence parallel > 1 yet")
+            self.self_training_numeric_only = bool(getattr(st_cfg, "numeric_match_only", True))
+            self.self_training_max_new_tokens = int(getattr(st_cfg, "max_new_tokens", 256))
+            self.self_training_temperature = float(getattr(st_cfg, "temperature", 0.0))
+            self.self_training_top_p = float(getattr(st_cfg, "top_p", 1.0))
+            self.self_training_do_sample = bool(getattr(st_cfg, "do_sample", False))
+            self.self_training_mismatch_retry_enable = bool(getattr(st_cfg, "mismatch_retry_enable", True))
+            self.self_training_max_retries = int(getattr(st_cfg, "max_retries", 1))
+            self.self_training_hint_template = getattr(
+                st_cfg,
+                "mismatch_hint_template",
+                "Oops, I made an error, the final answer is ### {truth} but I got {pred}",
+            )
+            self.self_training_verbose_logs = bool(getattr(st_cfg, "verbose_logs", True))
+            if self.device_mesh.get_rank() == 0:
+                print("[SFT Trainer] Self-training mode ENABLED")
+        else:
+            if self.device_mesh.get_rank() == 0:
+                print("[SFT Trainer] Self-training mode DISABLED")
         if self.device_mesh.get_rank() == 0:
             # Preview a sample to verify prompt formatting and loss mask
             try:
@@ -179,6 +214,235 @@ class FSDPSFTTrainer:
                     )
             except Exception as e:
                 print(f"[SFT Trainer] Warning: failed to preview first sample: {e}")
+
+    # -----------------------
+    # Self-training helpers
+    # -----------------------
+    def _build_prompt_messages(self, question_text: str) -> list[dict]:
+        messages = []
+        try:
+            system_prompt = getattr(self.train_dataset, "system_prompt", None)
+        except Exception:
+            system_prompt = None
+        if isinstance(system_prompt, str) and len(system_prompt.strip()) > 0:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": question_text})
+        return messages
+
+    def _apply_chat_template(self, messages: list[dict]) -> str:
+        return self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+
+    def _generate_response_text_from_prompt(self, prompt_chat_str: str) -> str:
+        # Greedy/top-p generation using the FSDP-wrapped model's forward
+        inputs = self.tokenizer(prompt_chat_str, return_tensors="pt", add_special_tokens=False)
+        input_ids = inputs["input_ids"].to(self.device_name)
+        attention_mask = inputs["attention_mask"].to(self.device_name)
+
+        eos_token_id = self.tokenizer.eos_token_id
+        pad_token_id = self.tokenizer.pad_token_id
+        max_new = self.self_training_max_new_tokens
+        do_sample = self.self_training_do_sample
+        temperature = max(self.self_training_temperature, 1e-5)
+        top_p = self.self_training_top_p
+
+        generated_ids = []
+        cur_input = input_ids
+        cur_mask = attention_mask
+        for _ in range(max_new):
+            pos_ids = compute_position_id_with_mask(cur_mask)
+            with torch.no_grad(), torch.autocast(device_type=self.device_name, dtype=torch.bfloat16):
+                out = self.fsdp_model(input_ids=cur_input, attention_mask=cur_mask, position_ids=pos_ids, use_cache=False)
+                logits = out.logits[:, -1, :]
+
+            if do_sample:
+                # temperature + top-p sampling
+                probs = torch.softmax(logits / temperature, dim=-1)
+                if 0.0 < top_p < 1.0:
+                    # nucleus sampling
+                    sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+                    cumsum = torch.cumsum(sorted_probs, dim=-1)
+                    cutoff = (cumsum > top_p).float()
+                    # ensure at least 1 token kept
+                    cutoff[..., 0] = 0.0
+                    kept = sorted_probs * (1.0 - cutoff)
+                    kept_sum = kept.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+                    kept = kept / kept_sum
+                    next_idx_sorted = torch.multinomial(kept, num_samples=1)
+                    next_token = sorted_idx.gather(-1, next_idx_sorted)
+                else:
+                    next_token = torch.multinomial(probs, num_samples=1)
+            else:
+                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+            next_token_id = next_token.item()
+            generated_ids.append(next_token_id)
+
+            if eos_token_id is not None and next_token_id == eos_token_id:
+                break
+
+            # append token
+            next_token_tensor = next_token.to(cur_input.dtype)
+            cur_input = torch.cat([cur_input, next_token_tensor], dim=1)
+            next_mask_token = torch.ones((cur_mask.shape[0], 1), dtype=cur_mask.dtype, device=cur_mask.device)
+            cur_mask = torch.cat([cur_mask, next_mask_token], dim=1)
+
+        if len(generated_ids) == 0:
+            return ""
+        new_tokens = torch.tensor(generated_ids, device=input_ids.device, dtype=input_ids.dtype)
+        text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        return text
+
+    def _build_training_tensors_from_text(self, prompt_chat_str: str, response_text: str) -> dict:
+        # Build response string with EOS
+        response_chat_str = response_text + (self.tokenizer.eos_token or "")
+        # Tokenize
+        prompt_ids_output = self.tokenizer(prompt_chat_str, return_tensors="pt", add_special_tokens=False)
+        prompt_ids = prompt_ids_output["input_ids"][0]
+        prompt_attention_mask = prompt_ids_output["attention_mask"][0]
+
+        response_ids_output = self.tokenizer(response_chat_str, return_tensors="pt", add_special_tokens=False)
+        response_ids = response_ids_output["input_ids"][0]
+        response_attention_mask = response_ids_output["attention_mask"][0]
+
+        input_ids = torch.cat((prompt_ids, response_ids), dim=-1)
+        attention_mask = torch.cat((prompt_attention_mask, response_attention_mask), dim=-1)
+
+        max_length = int(self.config.data.max_length)
+        sequence_length = input_ids.shape[0]
+        if sequence_length < max_length:
+            pad_ids = torch.ones(size=(max_length - sequence_length,), dtype=input_ids.dtype) * self.tokenizer.pad_token_id
+            pad_mask = torch.zeros(size=(max_length - sequence_length,), dtype=attention_mask.dtype)
+            input_ids = torch.cat((input_ids, pad_ids))
+            attention_mask = torch.cat((attention_mask, pad_mask))
+        elif sequence_length > max_length:
+            trunc = self.config.data.get("truncation", "error")
+            if trunc == "left":
+                input_ids = input_ids[-max_length:]
+                attention_mask = attention_mask[-max_length:]
+            elif trunc == "right":
+                input_ids = input_ids[:max_length]
+                attention_mask = attention_mask[:max_length]
+            elif trunc == "error":
+                raise NotImplementedError(f"sequence length {sequence_length} exceeds max_length {max_length}")
+            else:
+                raise NotImplementedError(f"Unknown truncation method {trunc}")
+
+        position_ids = compute_position_id_with_mask(attention_mask)
+        # Build loss mask: mask prompt (except last token), mask last token of response
+        prompt_len = int(prompt_ids.shape[0])
+        response_len = int(response_ids.shape[0])
+        loss_mask = attention_mask.clone()
+        if prompt_len > 1:
+            loss_mask[: min(prompt_len, loss_mask.size(0)) - 1] = 0
+        loss_mask[min(prompt_len + response_len, loss_mask.size(0)) - 1] = 0
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "loss_mask": loss_mask,
+        }
+
+    def _self_train_build_batch_from_micro(self, micro_batch: TensorDict) -> Optional[TensorDict]:
+        """For each sample in micro_batch, generate, compare, maybe retry, and collect those that match.
+
+        Returns a TensorDict collated across kept samples or None if nothing kept.
+        """
+        kept = []
+        # iterate item-wise
+        bs = micro_batch["input_ids"].shape[0]
+        for i in range(bs):
+            try:
+                data_index = int(micro_batch["data_index"][i].item()) if "data_index" in micro_batch else None
+            except Exception:
+                data_index = None
+            # Retrieve source texts from dataset using index when possible; fallback to decode
+            if data_index is not None and hasattr(self.train_dataset, "prompts") and hasattr(self.train_dataset, "responses"):
+                question_text = self.train_dataset.prompts[data_index]
+                truth_text = self.train_dataset.responses[data_index]
+            else:
+                # Fallback: decode from current tensors (less reliable)
+                # Decode prompt portion only by using loss_mask to find prompt boundary
+                ids = micro_batch["input_ids"][i]
+                lm = micro_batch["loss_mask"][i]
+                # prompt tokens roughly correspond to positions where loss_mask == 0 until first 1 appears
+                # For robustness, decode all; this is only a fallback
+                decoded = self.tokenizer.decode([t for t in ids.tolist() if t != self.tokenizer.pad_token_id])
+                question_text = decoded
+                truth_text = ""
+
+            # Build first-turn prompt and generate
+            messages = self._build_prompt_messages(question_text)
+            prompt_chat_str = self._apply_chat_template(messages)
+            gen_text_1 = self._generate_response_text_from_prompt(prompt_chat_str)
+
+            # Parse final answers
+            pred_final_1 = extract_final_answer(gen_text_1, tag_prefix=DEFAULT_ANSWER_TAG_PREFIX, tag_suffix=DEFAULT_ANSWER_TAG_SUFFIX)
+            truth_final = extract_final_answer(truth_text, tag_prefix=DEFAULT_ANSWER_TAG_PREFIX, tag_suffix=DEFAULT_ANSWER_TAG_SUFFIX)
+            # If truth has no tags and no number, truth_final can be None; fall back to raw truth text
+            if truth_final is None or truth_final == "":
+                truth_final = truth_text
+            match_res = answers_match(pred=str(pred_final_1 or ""), truth=str(truth_final or ""), numeric_only=self.self_training_numeric_only)
+
+            if self.self_training_verbose_logs and self.device_mesh.get_rank() == 0:
+                print(f"[SelfTrain] idx={data_index} q='{question_text[:120]}...' truth='{truth_text[:120]}...'\n  pred1='{gen_text_1[:120]}...'\n  final1='{pred_final_1}' vs truth_final='{truth_final}' -> match={match_res.is_match}")
+
+            chosen_response_text: Optional[str] = None
+
+            if match_res.is_match:
+                chosen_response_text = gen_text_1
+            elif self.self_training_mismatch_retry_enable and self.self_training_max_retries > 0:
+                # Build retry conversation: include assistant first response (cleaned) and user hint
+                clean_assistant = remove_tags(gen_text_1, tag_prefix=DEFAULT_ANSWER_TAG_PREFIX, tag_suffix=DEFAULT_ANSWER_TAG_SUFFIX)
+                hint = build_mismatch_hint(truth_final=str(truth_final), pred_final=pred_final_1, template=self.self_training_hint_template)
+                messages_retry = list(messages)
+                messages_retry.append({"role": "assistant", "content": clean_assistant})
+                messages_retry.append({"role": "user", "content": hint})
+                prompt_chat_str_retry = self._apply_chat_template(messages_retry)
+                gen_text_2 = self._generate_response_text_from_prompt(prompt_chat_str_retry)
+                pred_final_2 = extract_final_answer(gen_text_2, tag_prefix=DEFAULT_ANSWER_TAG_PREFIX, tag_suffix=DEFAULT_ANSWER_TAG_SUFFIX)
+                match_res2 = answers_match(pred=str(pred_final_2 or ""), truth=str(truth_final or ""), numeric_only=self.self_training_numeric_only)
+
+                if self.self_training_verbose_logs and self.device_mesh.get_rank() == 0:
+                    print(f"[SelfTrain] idx={data_index} retry hint='{hint}'\n  pred2='{gen_text_2[:120]}...' final2='{pred_final_2}' -> match={match_res2.is_match}")
+
+                if match_res2.is_match:
+                    chosen_response_text = gen_text_2
+                else:
+                    chosen_response_text = None
+            else:
+                chosen_response_text = None
+
+            if chosen_response_text is None:
+                # Skip training on this sample
+                if self.self_training_verbose_logs and self.device_mesh.get_rank() == 0:
+                    print(f"[SelfTrain] idx={data_index} -> SKIP")
+                continue
+
+            # Build training tensors from the chosen prompt and response
+            tensors = self._build_training_tensors_from_text(prompt_chat_str, chosen_response_text)
+            # Collect
+            kept.append(tensors)
+
+        if not kept:
+            return None
+
+        # Collate to batch
+        input_ids = torch.stack([x["input_ids"] for x in kept], dim=0).to(self.device_name)
+        attention_mask = torch.stack([x["attention_mask"] for x in kept], dim=0).to(self.device_name)
+        position_ids = torch.stack([x["position_ids"] for x in kept], dim=0).to(self.device_name)
+        loss_mask = torch.stack([x["loss_mask"] for x in kept], dim=0).to(self.device_name)
+
+        batch = TensorDict(
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "position_ids": position_ids,
+                "loss_mask": loss_mask,
+            },
+            batch_size=input_ids.shape[0],
+        )
+        return batch
 
     def _normalize_config_bsz(self):
         dp_size = self.device_mesh.size(0) if not self.ulysses_device_mesh else self.ulysses_device_mesh.size(0)
@@ -515,8 +779,17 @@ class FSDPSFTTrainer:
         n_micro_batches = len(micro_batches)
         step_loss = 0
         for micro_batch in micro_batches:
-            loss = self._compute_loss_and_backward(batch=micro_batch) / n_micro_batches
-            step_loss += loss.item()
+            if self.self_training_enable:
+                # Build a new micro-batch consisting only of matched samples
+                st_batch = self._self_train_build_batch_from_micro(micro_batch)
+                if st_batch is None:
+                    # nothing to train on for this micro-batch
+                    continue
+                loss = self._compute_loss_and_backward(batch=st_batch) / n_micro_batches
+                step_loss += loss.item()
+            else:
+                loss = self._compute_loss_and_backward(batch=micro_batch) / n_micro_batches
+                step_loss += loss.item()
         if self.device_mesh.get_rank() == 0:
             print(f"[SFT Trainer] Step loss (pre-reduce): {step_loss:.6f}")
 

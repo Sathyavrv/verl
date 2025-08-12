@@ -207,4 +207,6 @@ class SFTDataset(Dataset):
             "attention_mask": attention_mask,
             "position_ids": position_ids,
             "loss_mask": loss_mask,
+            # metadata for advanced trainers (collates as tensor)
+            "data_index": torch.tensor(item, dtype=torch.long),
         }

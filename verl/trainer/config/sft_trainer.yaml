@@ -89,3 +89,20 @@ trainer:
     # For more flexibility, you can specify the contents to load from the checkpoint.
     load_contents: ${trainer.checkpoint.save_contents}
   device: cuda
+  # Self-training options
+  self_training:
+    enable: false
+    # generation params
+    max_new_tokens: 2048
+    temperature: 0.7
+    top_p: 0.8
+    do_sample: false
+    # comparison
+    numeric_match_only: true
+    # If mismatch, we can do one retry by giving a hint
+    mismatch_retry_enable: true
+    mismatch_hint_template: "Oops, I made an error, the final answer is ### {truth} but I got {pred}"
+    # Max retries
+    max_retries: 1
+    # Logging verbosity
+    verbose_logs: true

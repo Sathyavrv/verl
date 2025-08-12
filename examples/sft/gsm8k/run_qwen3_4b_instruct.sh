@@ -38,5 +38,14 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     trainer.experiment_name=gsm8k-sft-qwen3-4b-instruct-2507 \
     trainer.logger=console \
     optim.lr=1e-4 \
-    trainer.total_epochs=1 $@ \    
-    trainer.device=cuda
+    trainer.total_epochs=1 \
+    trainer.device=cuda \
+    trainer.self_training.enable=true \
+    trainer.self_training.numeric_match_only=true \
+    trainer.self_training.mismatch_retry_enable=true \
+    trainer.self_training.max_retries=1 \
+    trainer.self_training.verbose_logs=true \
+    trainer.preview_assistant_only=true \
+    trainer.preview_num_tokens=2048 \
+    trainer.preview_every_n_steps=1 \
+    $@
