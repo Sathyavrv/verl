@@ -89,6 +89,10 @@ trainer:
     # For more flexibility, you can specify the contents to load from the checkpoint.
     load_contents: ${trainer.checkpoint.save_contents}
   device: cuda
+  # Preview options for debugging prompt/labels during training
+  preview_assistant_only: false
+  preview_num_tokens: 128
+  preview_every_n_steps: 0
   # Self-training options
   self_training:
     enable: false
