@@ -784,7 +784,21 @@ class FSDPSFTTrainer:
                 st_batch = self._self_train_build_batch_from_micro(micro_batch)
                 if st_batch is None:
                     # nothing to train on for this micro-batch
+                    if self.device_mesh.get_rank() == 0 and self.self_training_verbose_logs:
+                        try:
+                            total = int(micro_batch["input_ids"].shape[0])
+                        except Exception:
+                            total = -1
+                        print(f"[SelfTrain] kept 0/{total} samples this micro-batch")
                     continue
+                else:
+                    if self.device_mesh.get_rank() == 0 and self.self_training_verbose_logs:
+                        try:
+                            kept = int(st_batch["input_ids"].shape[0])
+                            total = int(micro_batch["input_ids"].shape[0])
+                        except Exception:
+                            kept, total = -1, -1
+                        print(f"[SelfTrain] kept {kept}/{total} samples this micro-batch")
                 loss = self._compute_loss_and_backward(batch=st_batch) / n_micro_batches
                 step_loss += loss.item()
             else:

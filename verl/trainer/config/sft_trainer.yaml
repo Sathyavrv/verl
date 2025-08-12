@@ -90,8 +90,8 @@ trainer:
     load_contents: ${trainer.checkpoint.save_contents}
   device: cuda
   # Preview options for debugging prompt/labels during training
-  preview_assistant_only: false
-  preview_num_tokens: 128
+  preview_assistant_only: true
+  preview_num_tokens: 2048
   preview_every_n_steps: 0
   # Self-training options
   self_training:
