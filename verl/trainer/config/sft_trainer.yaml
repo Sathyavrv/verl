@@ -110,3 +110,5 @@ trainer:
     max_retries: 1
     # Logging verbosity
     verbose_logs: true
+    # How many characters to print for generated responses in logs; <=0 for full text
+    max_log_chars: 0

@@ -47,5 +47,6 @@ torchrun --standalone --nnodes=1 --nproc_per_node=$nproc_per_node \
     trainer.self_training.verbose_logs=true \
     trainer.preview_assistant_only=false \
     trainer.preview_num_tokens=0 \
+    trainer.self_training.max_log_chars=0 \
     trainer.preview_every_n_steps=1 \
     $@

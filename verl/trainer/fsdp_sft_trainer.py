@@ -163,6 +163,7 @@ class FSDPSFTTrainer:
                 "Oops, I made an error, the final answer is ### {truth} but I got {pred}",
             )
             self.self_training_verbose_logs = bool(getattr(st_cfg, "verbose_logs", True))
+            self.self_training_max_log_chars = int(getattr(st_cfg, "max_log_chars", 120))
             if self.device_mesh.get_rank() == 0:
                 print("[SFT Trainer] Self-training mode ENABLED")
         else:
@@ -343,6 +344,17 @@ class FSDPSFTTrainer:
             "loss_mask": loss_mask,
         }
 
+    def _maybe_truncate_for_log(self, text: str) -> str:
+        try:
+            max_chars = int(self.self_training_max_log_chars)
+        except Exception:
+            max_chars = 120
+        if max_chars is None or max_chars <= 0:
+            return text
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars] + "..."
+
     def _self_train_build_batch_from_micro(self, micro_batch: TensorDict) -> Optional[TensorDict]:
         """For each sample in micro_batch, generate, compare, maybe retry, and collect those that match.
 
@@ -385,7 +397,10 @@ class FSDPSFTTrainer:
             match_res = answers_match(pred=str(pred_final_1 or ""), truth=str(truth_final or ""), numeric_only=self.self_training_numeric_only)
 
             if self.self_training_verbose_logs and self.device_mesh.get_rank() == 0:
-                print(f"[SelfTrain] idx={data_index} q='{question_text[:120]}...' truth='{truth_text[:120]}...'\n  pred1='{gen_text_1[:120]}...'\n  final1='{pred_final_1}' vs truth_final='{truth_final}' -> match={match_res.is_match}")
+                print(
+                    f"[SelfTrain] idx={data_index} final1='{pred_final_1}' vs truth_final='{truth_final}' -> match={match_res.is_match}"
+                )
+                print("[SelfTrain] idx={} pred1 (generated):\n{}".format(data_index, self._maybe_truncate_for_log(gen_text_1)))
 
             chosen_response_text: Optional[str] = None
 
@@ -404,7 +419,11 @@ class FSDPSFTTrainer:
                 match_res2 = answers_match(pred=str(pred_final_2 or ""), truth=str(truth_final or ""), numeric_only=self.self_training_numeric_only)
 
                 if self.self_training_verbose_logs and self.device_mesh.get_rank() == 0:
-                    print(f"[SelfTrain] idx={data_index} retry hint='{hint}'\n  pred2='{gen_text_2[:120]}...' final2='{pred_final_2}' -> match={match_res2.is_match}")
+                    print(f"[SelfTrain] idx={data_index} retry hint='{hint}'")
+                    print("[SelfTrain] idx={} pred2 (generated):\n{}".format(data_index, self._maybe_truncate_for_log(gen_text_2)))
+                    print(
+                        f"[SelfTrain] idx={data_index} final2='{pred_final_2}' vs truth_final='{truth_final}' -> match={match_res2.is_match}"
+                    )
 
                 if match_res2.is_match:
                     chosen_response_text = gen_text_2
