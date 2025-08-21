@@ -295,7 +295,19 @@ class FSDPSFTTrainer:
 
     def _build_training_tensors_from_text(self, prompt_chat_str: str, response_text: str) -> dict:
         # Build response string with EOS
-        response_chat_str = response_text + (self.tokenizer.eos_token or "")
+        # If dataset configured response wrappers, enforce them for self-training targets
+        try:
+            resp_prefix = getattr(self.train_dataset, "response_prefix", "") or ""
+            resp_suffix = getattr(self.train_dataset, "response_suffix", "") or ""
+        except Exception:
+            resp_prefix, resp_suffix = "", ""
+        wrapped_text = response_text
+        if resp_prefix or resp_suffix:
+            # Only wrap if not already wrapped
+            if (not resp_prefix or resp_prefix not in wrapped_text) and (not resp_suffix or resp_suffix not in wrapped_text):
+                wrapped_text = f"{resp_prefix}{wrapped_text}{resp_suffix}"
+
+        response_chat_str = wrapped_text + (self.tokenizer.eos_token or "")
         # Tokenize
         prompt_ids_output = self.tokenizer(prompt_chat_str, return_tensors="pt", add_special_tokens=False)
         prompt_ids = prompt_ids_output["input_ids"][0]
