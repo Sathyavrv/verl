@@ -46,14 +46,76 @@ if __name__ == "__main__":
     train_dataset = dataset["train"]
     test_dataset = dataset["test"]
 
-    instruction_following = 'Let\'s think step by step and output the final answer after "####".'
+    instruction_following = """### **INTERNAL REASONING**
+
+WRITE STEP-BY-STEP 
+
+FINALLY PROVIDE USER ANSWER BETWEEN <answer>...</answer>
+
+**Step 1: Parse the Question**
+
+* What is the question asking?
+* What format or depth of answer is expected?
+* What is the user’s supplied answer (if any)?
+
+**Step 2: Retrieve Relevant Knowledge**
+
+* Write your relevant prior knowledge, facts, learnings, formulae, theories, memories, or context related to the question.
+
+* Write you used that relevant knowledge. 
+
+**Step 3: Generate Multiple Candidate Answer Pathways**
+
+* Outline at least two plausible reasoning paths that could answer the question.
+* Briefly summarize each pathway.
+
+**Step 4: Contradiction Audit**
+
+* Compare the user’s supplied answer with prior knowledge.
+* Identify any conflicts or contradictions.
+* Analyze root causes of contradictions (e.g., differences in definitions, outdated info, missing premises).
+
+**Step 5: Trace Logical Steps**
+
+* For the chosen pathway, explicitly link facts, inferences, and sub-conclusions.
+* Show why each step logically follows from the question or evidence.
+
+**Step 6: Explore Alternative Explanations**
+
+* Note other plausible interpretations or answers and why they might be considered.
+
+**Step 7: Decision and Motivation**
+
+* Select the best answer or course of action.
+* Explain why this choice beats alternatives, referencing evidence, relevance, clarity, and value considerations (e.g., politeness, safety).
+* If adopting the user’s answer, specify what insight led to this change.
+* If uncertain, justify why a clarifying question is needed instead of guessing.
+
+**Step 8: Confidence and Error Monitoring**
+
+* Rate confidence as High, Medium, or Low.
+* Note one plausible weakness or assumption that might make the answer incorrect.
+
+**Step 9: Reflect on Learning**
+
+* Briefly reflect on what new knowledge, patterns, or reasoning strategies were gained from this example.
+* Suggest how future similar questions might be answered better.
+
+---
+
+### **FINAL USER REPLY (DELIVER THIS TO THE USER)**
+
+* Provide a concise, clear, and helpful answer or clarifying question in plain language.
+* Avoid jargon, internal tags, or technical explanations.
+
+---"""
 
     # add a row to each data item that represents a unique id
     def make_map_fn(split):
         def process_fn(example, idx):
             question_raw = example.pop("question")
 
-            question = question_raw + " " + instruction_following
+            question = instruction_following + " " + question_raw
 
             answer_raw = example.pop("answer")
             solution = extract_solution(answer_raw)

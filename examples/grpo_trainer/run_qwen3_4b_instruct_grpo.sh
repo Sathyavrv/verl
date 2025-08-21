@@ -61,6 +61,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
     trainer.total_epochs=1 \
+    custom_reward_function.path="$PROJECT_DIR/recipe/reward/gsm8k_answer_tag.py" \
+    custom_reward_function.name=compute_score \
+    custom_reward_function.reward_kwargs.fallback_to_default=True \
     $@
 
 
