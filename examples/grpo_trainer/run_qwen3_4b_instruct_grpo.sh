@@ -15,13 +15,33 @@ shift 2
 # Project root (two levels up from this script)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
 
+# Remap SFT-style override to PPO keys to avoid Hydra errors
+# Accepts either 'model.partial_pretrain=...' or '+model.partial_pretrain=...'
+EXTRA_ARGS=()
+REMAPPED_MODEL_PATH=""
+for arg in "$@"; do
+    case "$arg" in
+        model.partial_pretrain=*|+model.partial_pretrain=*)
+            REMAPPED_MODEL_PATH="${arg#*=}"
+            ;;
+        *)
+            EXTRA_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+# Optional env fallback
+if [ -z "$REMAPPED_MODEL_PATH" ] && [ -n "${MODEL_PARTIAL_PRETRAIN:-}" ]; then
+    REMAPPED_MODEL_PATH="$MODEL_PARTIAL_PRETRAIN"
+fi
+
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/gsm8k/train.parquet \
     data.val_files=$HOME/data/gsm8k/test.parquet \
-    data.train_batch_size=128 \
-    data.max_prompt_length=512 \
-    data.max_response_length=1024 \
+    data.train_batch_size=64 \
+    data.max_prompt_length=1024 \
+    data.max_response_length=2048 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.shuffle=False \
@@ -64,6 +84,8 @@ python3 -m verl.trainer.main_ppo \
     custom_reward_function.path="$PROJECT_DIR/recipe/reward/gsm8k_answer_tag.py" \
     custom_reward_function.name=compute_score \
     +custom_reward_function.reward_kwargs.fallback_to_default=True \
-    $@
+    ${REMAPPED_MODEL_PATH:+actor_rollout_ref.model.path="$REMAPPED_MODEL_PATH"} \
+    ${REMAPPED_MODEL_PATH:+critic.model.path="$REMAPPED_MODEL_PATH"} \
+    "${EXTRA_ARGS[@]}"
 
 
