@@ -46,7 +46,7 @@ python3 -m verl.trainer.main_ppo \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.shuffle=False \
-    actor_rollout_ref.model.path=/kaggle/input/qwen-3/transformers/0.6b/1 \
+    actor_rollout_ref.model.path=/kaggle/input/qwen2.5/transformers/1.5b-instruct/1 \
     actor_rollout_ref.model.use_shm=True \
     actor_rollout_ref.model.lora_rank=64 \
     actor_rollout_ref.model.lora_alpha=32 \
