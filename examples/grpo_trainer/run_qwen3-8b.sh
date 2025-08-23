@@ -2,6 +2,39 @@
 # It outperforms the Qwen2 7B base model by two percentage points on the test set of GSM8K.
 
 set -x
+if [ "$#" -lt 2 ]; then
+    echo "Usage: run_qwen3_4b_instruct_grpo.sh <n_gpus_per_node> <save_path> [other_configs...]"
+    exit 1
+fi
+n_gpus_per_node=$1
+save_path=$2
+
+# Shift the arguments so $@ refers to the rest
+shift 2
+
+
+# Project root (two levels up from this script)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
+
+# Remap SFT-style override to PPO keys to avoid Hydra errors
+# Accepts either 'model.partial_pretrain=...' or '+model.partial_pretrain=...'
+EXTRA_ARGS=()
+REMAPPED_MODEL_PATH=""
+for arg in "$@"; do
+    case "$arg" in
+        model.partial_pretrain=*|+model.partial_pretrain=*)
+            REMAPPED_MODEL_PATH="${arg#*=}"
+            ;;
+        *)
+            EXTRA_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+# Optional env fallback
+if [ -z "$REMAPPED_MODEL_PATH" ] && [ -n "${MODEL_PARTIAL_PRETRAIN:-}" ]; then
+    REMAPPED_MODEL_PATH="$MODEL_PARTIAL_PRETRAIN"
+fi
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -15,6 +48,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=/kaggle/input/qwen-3/transformers/0.6b/1 \
     actor_rollout_ref.actor.optim.lr=2e-5 \
     actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.model.lora_rank=64 \
+    actor_rollout_ref.model.lora_alpha=32 \
+    +actor_rollout_ref.actor.fsdp_config.wrap_policy.disable=True \
+    +actor_rollout_ref.ref.fsdp_config.wrap_policy.disable=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=True \
@@ -40,4 +77,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
-    trainer.total_epochs=15 $@
+    trainer.total_epochs=1 \
+    custom_reward_function.path="$PROJECT_DIR/recipe/reward/gsm8k_answer_tag.py" \
+    custom_reward_function.name=compute_score \
+    +custom_reward_function.reward_kwargs.fallback_to_default=True \
+    ${REMAPPED_MODEL_PATH:+actor_rollout_ref.model.path="$REMAPPED_MODEL_PATH"} \
+    ${REMAPPED_MODEL_PATH:+critic.model.path="$REMAPPED_MODEL_PATH"} \
+    "${EXTRA_ARGS[@]}"
