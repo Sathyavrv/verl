@@ -51,7 +51,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.lora_alpha=32 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.optim.lr=3e-6 \
+    actor_rollout_ref.actor.optim.lr=2e-5 \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=True \
@@ -81,6 +81,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
     trainer.total_epochs=1 \
+    trainer.total_training_steps=50 \
     custom_reward_function.path="$PROJECT_DIR/recipe/reward/gsm8k_answer_tag.py" \
     custom_reward_function.name=compute_score \
     +custom_reward_function.reward_kwargs.fallback_to_default=True \
