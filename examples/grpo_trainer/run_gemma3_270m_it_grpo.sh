@@ -44,7 +44,7 @@ python3 -m verl.trainer.main_ppo \
     +actor_rollout_ref.ref.fsdp_config.wrap_policy.disable=True \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
-    trainer.logger='["console","wandb"]' \
+    trainer.logger=console\
     trainer.project_name='verl_grpo_example_gsm8k' \
     trainer.experiment_name='gemma3_270m_it_grpo' \
     trainer.n_gpus_per_node=4 \
