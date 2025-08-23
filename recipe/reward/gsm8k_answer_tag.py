@@ -11,7 +11,8 @@ from typing import Any
 from verl.utils.reward_score import default_compute_score as _default_compute_score
 
 
-_NUM_RE = re.compile(r"(-?[0-9][0-9,\.]*?)")
+# Capture full numeric tokens (e.g., 18, -2, 1,234, 3.14). Avoid lazy matching which caused '18' -> '8'.
+_NUM_RE = re.compile(r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
 _TAG_RE = re.compile(r"<answer>([\s\S]*?)</answer>", re.IGNORECASE)
 
 

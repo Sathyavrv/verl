@@ -18,6 +18,7 @@ Metrics related to the PPO trainer.
 from collections import defaultdict
 from functools import partial
 from typing import Any, Callable
+import numbers
 
 import numpy as np
 import torch
@@ -395,12 +396,21 @@ def process_validation_metrics(
                 if isinstance(var_vals[0], str):
                     continue
 
+                # Clean values: keep numeric (int, float, bool, np.number); drop None/strings/others
+                cleaned_indices = [
+                    i for i, v in enumerate(var_vals) if isinstance(v, (bool, int, float, np.number, numbers.Number))
+                ]
+                cleaned_vals = [var_vals[i] for i in cleaned_indices]
+                if len(cleaned_vals) == 0:
+                    # nothing to aggregate for this variable
+                    continue
+
                 metric = {}
-                n_resps = len(var_vals)
-                metric[f"mean@{n_resps}"] = np.mean(var_vals)
+                n_resps = len(cleaned_vals)
+                metric[f"mean@{n_resps}"] = np.mean(cleaned_vals)
 
                 if n_resps > 1:
-                    metric[f"std@{n_resps}"] = np.std(var_vals)
+                    metric[f"std@{n_resps}"] = np.std(cleaned_vals)
 
                     ns = []
                     n = 2
@@ -411,21 +421,25 @@ def process_validation_metrics(
 
                     for n in ns:
                         [(bon_mean, bon_std), (won_mean, won_std)] = bootstrap_metric(
-                            data=var_vals, subset_size=n, reduce_fns=[np.max, np.min], seed=seed
+                            data=cleaned_vals, subset_size=n, reduce_fns=[np.max, np.min], seed=seed
                         )
                         metric[f"best@{n}/mean"], metric[f"best@{n}/std"] = bon_mean, bon_std
                         metric[f"worst@{n}/mean"], metric[f"worst@{n}/std"] = won_mean, won_std
                         if var2vals.get("pred", None) is not None:
+                            pred_list = var2vals["pred"]
                             vote_data = [
-                                {"val": val, "pred": pred} for val, pred in zip(var_vals, var2vals["pred"], strict=True)
+                                {"val": val, "pred": pred_list[idx]}
+                                for idx, val in zip(cleaned_indices, cleaned_vals)
+                                if idx < len(pred_list)
                             ]
-                            [(maj_n_mean, maj_n_std)] = bootstrap_metric(
-                                data=vote_data,
-                                subset_size=n,
-                                reduce_fns=[partial(calc_maj_val, vote_key="pred", val_key="val")],
-                                seed=seed,
-                            )
-                            metric[f"maj@{n}/mean"], metric[f"maj@{n}/std"] = maj_n_mean, maj_n_std
+                            if len(vote_data) >= n:
+                                [(maj_n_mean, maj_n_std)] = bootstrap_metric(
+                                    data=vote_data,
+                                    subset_size=n,
+                                    reduce_fns=[partial(calc_maj_val, vote_key="pred", val_key="val")],
+                                    seed=seed,
+                                )
+                                metric[f"maj@{n}/mean"], metric[f"maj@{n}/std"] = maj_n_mean, maj_n_std
 
                 data_src2prompt2var2metric[data_source][prompt][var_name] = metric
 
