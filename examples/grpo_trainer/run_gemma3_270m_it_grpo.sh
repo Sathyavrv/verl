@@ -67,8 +67,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.use_kl_in_reward=False \
-    +actor_rollout_ref.actor.fsdp_config.wrap_policy.disable=True \
-    +actor_rollout_ref.ref.fsdp_config.wrap_policy.disable=True \
     trainer.critic_warmup=0 \
     trainer.logger=console\
     trainer.project_name='verl_grpo_example_gsm8k' \
