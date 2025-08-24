@@ -1,0 +1,27 @@
+[
+  {
+    "problem": "The operation $\\otimes$ is defined for all nonzero numbers by $a \\otimes b = \\frac{a^{2}}{b}$. Determine $[(1 \\otimes 2) \\otimes 3] - [1 \\otimes (2 \\otimes 3)]$.",
+    "answer": "-\\frac{2}{3}",
+    "solution": "Let's solve this step by step:\n\n1) First, let's compute $1 \\otimes 2 = \\frac{1^2}{2} = \\frac{1}{2}$\n2) Then, $(1 \\otimes 2) \\otimes 3 = \\frac{1}{2} \\otimes 3 = \\frac{(\\frac{1}{2})^2}{3} = \\frac{\\frac{1}{4}}{3} = \\frac{1}{12}$\n\n3) Now, let's compute $2 \\otimes 3 = \\frac{2^2}{3} = \\frac{4}{3}$\n4) Then, $1 \\otimes (2 \\otimes 3) = 1 \\otimes \\frac{4}{3} = \\frac{1^2}{\\frac{4}{3}} = \\frac{1}{\\frac{4}{3}} = \\frac{3}{4}$\n\n5) Finally, $[(1 \\otimes 2) \\otimes 3] - [1 \\otimes (2 \\otimes 3)] = \\frac{1}{12} - \\frac{3}{4} = \\frac{1}{12} - \\frac{9}{12} = -\\frac{8}{12} = -\\frac{2}{3}$\n\nTherefore, the answer is $-\\frac{2}{3}$."
+  },
+  {
+    "problem": "Find the value of $\\sqrt{16} + \\sqrt{25}$.",
+    "answer": "9",
+    "solution": "Let's solve this step by step:\n\n1) $\\sqrt{16} = 4$ (since $4^2 = 16$)\n2) $\\sqrt{25} = 5$ (since $5^2 = 25$)\n3) $\\sqrt{16} + \\sqrt{25} = 4 + 5 = 9$\n\nTherefore, the answer is $9$."
+  },
+  {
+    "problem": "What is the sum of the first 10 positive integers?",
+    "answer": "55",
+    "solution": "The sum of the first n positive integers is given by the formula: $\\frac{n(n+1)}{2}$\n\nFor n = 10:\n$\\frac{10(10+1)}{2} = \\frac{10 \\times 11}{2} = \\frac{110}{2} = 55$\n\nTherefore, the sum of the first 10 positive integers is $55$."
+  },
+  {
+    "problem": "Solve the equation: $2x + 5 = 13$",
+    "answer": "4",
+    "solution": "Let's solve this step by step:\n\n1) Start with: $2x + 5 = 13$\n2) Subtract 5 from both sides: $2x = 13 - 5 = 8$\n3) Divide both sides by 2: $x = \\frac{8}{2} = 4$\n\nTherefore, $x = 4$.\n\nTo verify: $2(4) + 5 = 8 + 5 = 13$ ✓"
+  },
+  {
+    "problem": "What is the area of a circle with radius 7 units?",
+    "answer": "49\\pi",
+    "solution": "The area of a circle is given by the formula: $A = \\pi r^2$\n\nGiven: radius $r = 7$ units\n\nSubstitute into the formula:\n$A = \\pi (7)^2 = \\pi \\times 49 = 49\\pi$\n\nTherefore, the area of the circle is $49\\pi$ square units."
+  }
+]
