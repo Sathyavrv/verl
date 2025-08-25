@@ -682,6 +682,10 @@ class RayPPOTrainer:
                 "recompute_log_prob": False,
                 "do_sample": self.config.actor_rollout_ref.rollout.val_kwargs.do_sample,
                 "validate": True,
+                # allow overriding response length for faster validation
+                "response_length": self.config.actor_rollout_ref.rollout.val_kwargs.get(
+                    "response_length", self.config.actor_rollout_ref.rollout.response_length
+                ),
                 "global_steps": self.global_steps,
             }
             print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")
