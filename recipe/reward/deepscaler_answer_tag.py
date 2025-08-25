@@ -8,7 +8,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from verl.utils.reward_score import default_compute_score as _default_compute_score
+def _lazy_default_compute_score():
+    # Import only when actually needed to avoid heavy imports during DeepScaleR tests
+    from verl.utils.reward_score import default_compute_score as _default_compute_score
+    return _default_compute_score
 
 
 # Capture full numeric tokens (e.g., 18, -2, 1,234, 3.14, -2/3, fractions, etc.)
@@ -45,7 +48,7 @@ def compute_score(
     ground_truth: str,
     extra_info: dict[str, Any] | None = None,
     # kwargs below are optional and can be passed via custom_reward_function.reward_kwargs.*
-    fallback_to_default: bool = True,
+    fallback_to_default: bool = False,
 ) -> float | dict[str, Any]:
     """Score function that reads final answers from <answer>...</answer> for DeepScaleR dataset.
 
@@ -54,7 +57,7 @@ def compute_score(
     """
 
     if data_source != "agentica-org/DeepScaleR-Preview-Dataset":
-        return _default_compute_score(
+        return _lazy_default_compute_score()(
             data_source=data_source,
             solution_str=solution_str,
             ground_truth=ground_truth,
@@ -71,19 +74,19 @@ def compute_score(
         parsed_answer = _extract_answer(match_iter[-1].group(1))
 
     if parsed_answer is None and fallback_to_default:
-        # Fall back to default scorer if no answer tag found
-        score = _default_compute_score(
-            data_source=data_source,
-            solution_str=solution_str,
-            ground_truth=ground_truth,
-            extra_info=extra_info,
-        )
-        return {
-            "score": float(score),
-            "used_answer_tag": used_answer_tag,
-            "parsed_answer": parsed_answer,
-            "fallback": True,
-        }
+        # For DeepScaleR, avoid delegating to the default scorer (not implemented).
+        # Optionally, try to parse an answer from the whole solution string.
+        parsed_from_full = _extract_answer(solution_str)
+        if parsed_from_full is not None:
+            score = 1.0 if parsed_from_full == ground_truth else 0.0
+            return {
+                "score": float(score),
+                "used_answer_tag": used_answer_tag,
+                "parsed_answer": parsed_from_full,
+                "fallback": True,
+            }
+        # If still nothing, return zero with fallback flag.
+        return {"score": 0.0, "used_answer_tag": used_answer_tag, "parsed_answer": None, "fallback": True}
 
     if parsed_answer is None:
         return {"score": 0.0, "used_answer_tag": used_answer_tag, "parsed_answer": parsed_answer, "fallback": False}
