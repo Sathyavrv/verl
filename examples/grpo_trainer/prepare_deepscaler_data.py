@@ -140,23 +140,11 @@ FINALLY PROVIDE USER ANSWER BETWEEN <answer>...</answer>
         # Create output directory
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-
-        # Save train split
+        
+        # Save to parquet
         output_file = output_path / "train.parquet"
         verl_df.to_parquet(output_file, index=False)
-        print(f"\nTrain data saved to: {output_file}")
-
-        # Create a small validation split (10 rows or fewer if dataset is smaller)
-        val_rows = min(10, len(verl_df))
-        val_df = verl_df.sample(n=val_rows, random_state=42).copy()
-        # mark split as val in extra_info
-        if "extra_info" in val_df.columns:
-            val_df.loc[:, "extra_info"] = val_df["extra_info"].apply(
-                lambda d: {**d, "split": "val"} if isinstance(d, dict) else d
-            )
-        val_file = output_path / "val.parquet"
-        val_df.to_parquet(val_file, index=False)
-        print(f"Validation data (n={val_rows}) saved to: {val_file}")
+        print(f"\nData saved to: {output_file}")
         
         # Verify the saved file
         if output_file.exists():
@@ -165,11 +153,7 @@ FINALLY PROVIDE USER ANSWER BETWEEN <answer>...</answer>
             
             # Load and verify
             loaded_df = pd.read_parquet(output_file)
-            print(f"Verified loaded train data shape: {loaded_df.shape}")
-
-            # Verify val file
-            loaded_val_df = pd.read_parquet(val_file)
-            print(f"Verified loaded val data shape: {loaded_val_df.shape}")
+            print(f"Verified loaded data shape: {loaded_df.shape}")
             
             # Check that required columns exist
             required_columns = ["data_source", "prompt", "ability", "reward_model", "extra_info"]

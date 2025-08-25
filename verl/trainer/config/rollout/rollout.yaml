@@ -119,9 +119,6 @@ val_kwargs:
   # Whether to sample during training rollout. False uses greedy sampling.
   do_sample: False
 
-  # Max tokens to generate during validation; falls back to rollout.response_length when null
-  response_length: null
-
 # Multi-turn interaction config for tools or chat.
 multi_turn:
 

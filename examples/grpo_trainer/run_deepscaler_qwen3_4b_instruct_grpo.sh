@@ -42,7 +42,7 @@ fi
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=/kaggle/working/data/deepscaler/train.parquet \
-    data.val_files=/kaggle/working/data/deepscaler/val.parquet \
+    data.val_files=/kaggle/working/data/deepscaler/train.parquet \
     data.prompt_key=prompt \
     data.reward_fn_key=data_source \
     data.train_batch_size=32 \

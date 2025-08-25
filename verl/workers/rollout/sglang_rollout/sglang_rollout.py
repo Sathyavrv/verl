@@ -672,9 +672,6 @@ class SGLangRollout(BaseRollout):
 
         do_sample = prompts.meta_info.get("do_sample", True)
         is_validate = prompts.meta_info.get("validate", False)
-        request_response_length = prompts.meta_info.get("response_length", None)
-        if request_response_length is None:
-            request_response_length = self.config.response_length
 
         # Create request-level sampling parameters
         request_sampling_params = self.sampling_params.copy()
@@ -690,7 +687,7 @@ class SGLangRollout(BaseRollout):
                     "top_k": -1,
                     "ignore_eos": False,
                     "min_new_tokens": 0,
-                    "max_new_tokens": request_response_length,
+                    "max_new_tokens": self.config.response_length,
                     "skip_special_tokens": True,
                     "spaces_between_special_tokens": True,
                 }
@@ -707,9 +704,6 @@ class SGLangRollout(BaseRollout):
 
         # Update with any additional kwargs
         request_sampling_params.update(kwargs)
-
-        # Always cap per-request max_new_tokens if provided (e.g., during validation)
-        request_sampling_params["max_new_tokens"] = request_response_length
 
         if self._tp_rank == 0:
             loop = asyncio.get_event_loop()
@@ -1018,10 +1012,7 @@ class SGLangRollout(BaseRollout):
     async def _handle_engine_generate(
         self, generation_prompt_ids: list[int], sampling_params: dict, image_data: Optional[list[Any]] = None
     ) -> dict:
-        max_new_tokens = min(
-            sampling_params.get("max_new_tokens", self.config.response_length),
-            self.config.max_model_len - len(generation_prompt_ids) - 1,
-        )
+        max_new_tokens = min(self.config.response_length, self.config.max_model_len - len(generation_prompt_ids) - 1)
         kwargs = sampling_params.copy()
         kwargs["max_new_tokens"] = max_new_tokens
         kwargs["n"] = 1  # group size is supported in preprocess

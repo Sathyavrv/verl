@@ -303,10 +303,6 @@ class vLLMRollout(BaseRollout):
 
         do_sample = prompts.meta_info.get("do_sample", True)
         is_validate = prompts.meta_info.get("validate", False)
-        # Per-request response length override (e.g., during validation)
-        request_response_length = prompts.meta_info.get("response_length", None)
-        if request_response_length is None:
-            request_response_length = self.config.response_length
         if not do_sample:
             kwargs = {
                 "best_of": 1,
@@ -335,7 +331,7 @@ class vLLMRollout(BaseRollout):
                 ] * batch_size
 
         # users can customize different sampling_params at different run
-        with self.update_sampling_params(max_tokens=request_response_length, **kwargs):
+        with self.update_sampling_params(**kwargs):
             outputs = self.inference_engine.generate(
                 prompts=vllm_inputs,  # because we have already convert it to prompt token id
                 sampling_params=self.sampling_params,
@@ -358,12 +354,12 @@ class vLLMRollout(BaseRollout):
                             curr_log_prob.append(logprob[response_ids[i]].logprob)
                         rollout_log_probs.append(curr_log_prob)
 
-            response = pad_2d_list_to_length(response, self.pad_token_id, max_length=request_response_length).to(
+            response = pad_2d_list_to_length(response, self.pad_token_id, max_length=self.config.response_length).to(
                 idx.device
             )
             if self.config.calculate_log_probs:
                 rollout_log_probs = pad_2d_list_to_length(
-                    rollout_log_probs, -1, max_length=request_response_length
+                    rollout_log_probs, -1, max_length=self.config.response_length
                 ).to(idx.device)
                 rollout_log_probs = rollout_log_probs.to(torch.float32)
 
