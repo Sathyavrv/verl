@@ -672,7 +672,9 @@ class SGLangRollout(BaseRollout):
 
         do_sample = prompts.meta_info.get("do_sample", True)
         is_validate = prompts.meta_info.get("validate", False)
-        request_response_length = prompts.meta_info.get("response_length", self.config.response_length)
+        request_response_length = prompts.meta_info.get("response_length", None)
+        if request_response_length is None:
+            request_response_length = self.config.response_length
 
         # Create request-level sampling parameters
         request_sampling_params = self.sampling_params.copy()

@@ -676,16 +676,20 @@ class RayPPOTrainer:
                 non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
             )
 
+            # Derive a concrete response_length for validation to avoid per-rank mismatch
+            _val_resp_len = self.config.actor_rollout_ref.rollout.val_kwargs.get(
+                "response_length", None
+            )
+            if _val_resp_len is None:
+                _val_resp_len = self.config.actor_rollout_ref.rollout.response_length
+
             test_gen_batch.meta_info = {
                 "eos_token_id": self.tokenizer.eos_token_id,
                 "pad_token_id": self.tokenizer.pad_token_id,
                 "recompute_log_prob": False,
                 "do_sample": self.config.actor_rollout_ref.rollout.val_kwargs.do_sample,
                 "validate": True,
-                # allow overriding response length for faster validation
-                "response_length": self.config.actor_rollout_ref.rollout.val_kwargs.get(
-                    "response_length", self.config.actor_rollout_ref.rollout.response_length
-                ),
+                "response_length": int(_val_resp_len),
                 "global_steps": self.global_steps,
             }
             print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")

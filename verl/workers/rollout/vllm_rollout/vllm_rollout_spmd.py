@@ -304,7 +304,9 @@ class vLLMRollout(BaseRollout):
         do_sample = prompts.meta_info.get("do_sample", True)
         is_validate = prompts.meta_info.get("validate", False)
         # Per-request response length override (e.g., during validation)
-        request_response_length = prompts.meta_info.get("response_length", self.config.response_length)
+        request_response_length = prompts.meta_info.get("response_length", None)
+        if request_response_length is None:
+            request_response_length = self.config.response_length
         if not do_sample:
             kwargs = {
                 "best_of": 1,
