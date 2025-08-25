@@ -15,6 +15,10 @@ shift 2
 # Project root (two levels up from this script)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
 
+# Clean up shared memory cache to prevent conflicts
+echo "Cleaning up shared memory cache..."
+sudo rm -rf /dev/shm/verl-cache/* 2>/dev/null || true
+
 # Remap SFT-style override to PPO keys to avoid Hydra errors
 # Accepts either 'model.partial_pretrain=...' or '+model.partial_pretrain=...'
 EXTRA_ARGS=()
@@ -41,14 +45,14 @@ python3 -m verl.trainer.main_ppo \
     data.val_files=/kaggle/working/data/deepscaler/train.parquet \
     data.prompt_key=prompt \
     data.reward_fn_key=data_source \
-    data.train_batch_size=64 \
+    data.train_batch_size=32 \
     data.max_prompt_length=1024 \
     data.max_response_length=2048 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.shuffle=False \
     actor_rollout_ref.model.path="/kaggle/working/models/Qwen3-4B-Instruct-2507" \
-    actor_rollout_ref.model.use_shm=True \
+    actor_rollout_ref.model.use_shm=False \
     actor_rollout_ref.model.lora_rank=64 \
     actor_rollout_ref.model.lora_alpha=32 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
@@ -70,7 +74,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.load_format=safetensors \
     actor_rollout_ref.rollout.layered_summon=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
+    actor_rollout_ref.ref.fsdp_config.param_offload=False \
+    actor_rollout_ref.ref.fsdp_config.optimizer_offload=False \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.logger=console \
