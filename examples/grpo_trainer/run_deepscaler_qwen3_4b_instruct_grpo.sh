@@ -84,10 +84,8 @@ python3 -m verl.trainer.main_ppo \
     trainer.default_local_dir=$save_path \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=5 \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=20 \
+    trainer.total_training_steps=30 \
     custom_reward_function.path="$PROJECT_DIR/recipe/reward/deepscaler_answer_tag.py" \
     custom_reward_function.name=compute_score \
     +custom_reward_function.reward_kwargs.fallback_to_default=True \
